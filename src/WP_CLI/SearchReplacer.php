@@ -56,6 +56,7 @@ class SearchReplacer {
 	 * @var int
 	 */
 	private $max_recursion;
+	private $recurse_json;
 
 	/**
 	 * @param string  $from            String we're looking to replace.
@@ -67,7 +68,7 @@ class SearchReplacer {
 	 * @param bool    $logging         Whether logging.
 	 * @param integer $regex_limit     The maximum possible replacements for each pattern in each subject string.
 	 */
-	public function __construct( $from, $to, $recurse_objects = false, $regex = false, $regex_flags = '', $regex_delimiter = '/', $logging = false, $regex_limit = -1 ) {
+	public function __construct( $from, $to, $recurse_objects = false, $regex = false, $regex_flags = '', $regex_delimiter = '/', $logging = false, $regex_limit = -1, $recurse_json = false ) {
 		$this->from            = $from;
 		$this->to              = $to;
 		$this->recurse_objects = $recurse_objects;
@@ -76,6 +77,7 @@ class SearchReplacer {
 		$this->regex_delimiter = $regex_delimiter;
 		$this->regex_limit     = $regex_limit;
 		$this->logging         = $logging;
+		$this->recurse_json    = $recurse_json
 		$this->clear_log_data();
 
 		// Get the XDebug nesting level. Will be zero (no limit) if no value is set
@@ -186,25 +188,20 @@ class SearchReplacer {
 				if ( $this->logging ) {
 					$old_data = $data;
 				}
-				if ( $this->regex ) {
-					$search_regex  = $this->regex_delimiter;
-					$search_regex .= $this->from;
-					$search_regex .= $this->regex_delimiter;
-					$search_regex .= $this->regex_flags;
 
-					$result = preg_replace( $search_regex, $this->to, $data, $this->regex_limit );
-					if ( null === $result || PREG_NO_ERROR !== preg_last_error() ) {
-						\WP_CLI::warning(
-							sprintf(
-								'The provided regular expression threw a PCRE error - %s',
-								$this->preg_error_message( $result )
-							)
-						);
+				// TODO: This runs json_decode twice and is bad and I should feel bad.
+				if ( $this->is_json($data) && $this->recurse_json ) {
+					$decoded_data = json_decode( $new_value );
+					if ( $decoded_data === null ) {
+					    WP_CLI::warning( "Skipping JSON processing for value that failed decoding: " . substr($value, 0, 100) );
+					} else {
+						$decoded_data = $this->recurse_json_replace( $decoded_data );
+						$data = json_encode( $decoded_data );
 					}
-					$data = $result;
 				} else {
-					$data = str_replace( $this->from, $this->to, $data );
+					$data = $this->run_string_search_and_replace($data)
 				}
+
 				if ( $this->logging && $old_data !== $data ) {
 					$this->log_data[] = $old_data;
 				}
@@ -255,5 +252,65 @@ class SearchReplacer {
 		return isset( $error_names[ $error ] )
 			? $error_names[ $error ]
 			: '<unknown error>';
+	}
+
+	/**
+	 * Runs string replace or regex replace, recursing through arrays or objects
+	 * 
+	 * @param array|object|string $json The JSON value to be replaced
+	 * @param string              $from the value to match
+	 * @param string              $to the value to replace with
+	 **/
+	private function recurse_json_replace($data, $from, $to) {
+	    if (is_array($data)) {
+	        foreach ($data as $key => $value) {
+	            $data[$key] = $this->recurse_json_replace($value, $from, $to);
+	        }
+	        return $data;
+	    }
+	    if (is_object($data)) {
+	        foreach ($data as $key => $value) {
+	            $data->$key = $this->recurse_json_replace($value, $from, $to);
+	        }
+	        return $data;
+	    }
+	    return $this->run_string_search_and_replace($data);
+	}
+
+	/**
+	 * Runs search and replace using regex or basic str_replace
+	 * TODO: This Doc Block
+	 **/
+	private function run_string_search_and_replace($data) {
+		if ( $this->regex ) {
+			$search_regex  = $this->regex_delimiter;
+			$search_regex .= $this->from;
+			$search_regex .= $this->regex_delimiter;
+			$search_regex .= $this->regex_flags;
+
+			$result = preg_replace( $search_regex, $this->to, $data, $this->regex_limit );
+			if ( null === $result || PREG_NO_ERROR !== preg_last_error() ) {
+				\WP_CLI::warning(
+					sprintf(
+						'The provided regular expression threw a PCRE error - %s',
+						$this->preg_error_message( $result )
+					)
+				);
+			}
+			return $result;
+		}
+		return str_replace( $this->from, $this->to, $data );
+	}
+
+	/**
+	 * Assert whether a given value is valid JSON or not.
+	 *
+	 * @param string $data the data to validate
+	 * @return boolean whether or not the data is valid JSON
+	 */
+	private function is_json($data) boolean {
+		// TODO: Check string starts with [ or {
+		json_decode($data);
+		return (json_last_error() === JSON_ERROR_NONE);
 	}
 }
