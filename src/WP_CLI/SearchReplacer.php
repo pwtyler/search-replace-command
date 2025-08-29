@@ -197,6 +197,8 @@ class SearchReplacer {
 					$decoded_data = json_decode( $data );
 					if ( json_last_error() === JSON_ERROR_NONE && $decoded_data !== null ) {
 						$decoded_data = $this->recurse_json_replace( $decoded_data, $this->from, $this->to );
+						
+						# TODO: Handle JSON encoding with or without escaping slashes. How to detect which was used in the original string?
 						$data = json_encode( $decoded_data );
 					} else {
 						WP_CLI::warning( "Skipping JSON processing for value that failed decoding: " . substr($data, 0, 100) );
