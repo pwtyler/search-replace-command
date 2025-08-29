@@ -1394,31 +1394,23 @@ Feature: Do global search/replace
       """
 
   @require-mysql
-  Scenario: Search and replace within esacped JSON
+  Scenario: Search/replace JSON string containing a URL in a JSON string.
     Given a WP install
-    And a setup-theme-mod.php file:
-      """
-      <?php
-      set_theme_mod( 'header_image_data', (object) array( 'url' => 'https://subdomain.example.com/foo.jpg' ) );
-      """
-    And I run `wp eval-file setup-theme-mod.php`
+    And I run `wp option add my_json_option '{"images":["http://foo.local/wp-content/uploads/image.jpg"]}'`
+    When I run `wp search-replace //foo.local //bar.local`
+    Then I run `wp option get my_json_option`
+    And STDOUT should contain:
+      "http://bar.local/wp-content/uploads/image.jpg"
 
-    When I run `wp theme mod get header_image_data`
-    Then STDOUT should be a table containing rows:
-      | key               | value                                              |
-      | header_image_data | {"url":"https:\/\/subdomain.example.com\/foo.jpg"} |
-
-    When I run `wp search-replace //subdomain.example.com //example.com --no-recurse-objects`
-    Then STDOUT should be a table containing rows:
-      | Table      | Column       | Replacements | Type |
-      | wp_options | option_value | 0            | PHP  |
-
-    When I run `wp search-replace //subdomain.example.com //example.com`
-    Then STDOUT should be a table containing rows:
-      | Table      | Column       | Replacements | Type |
-      | wp_options | option_value | 1            | PHP  |
-
-    When I run `wp theme mod get header_image_data`
-    Then STDOUT should be a table containing rows:
-      | key               | value                                    |
-      | header_image_data | {"url":"https:\/\/example.com\/foo.jpg"} |
+  @require-mysql
+  Scenario: Search/replace JSON string containing an escaped URL
+    Given a WP install
+    And I run `wp option add my_json_option '{"images":["http:\/\/foo.local\/wp-content\/uploads\/image.jpg"]}'`
+    When I run `wp search-replace //foo.local //bar.local`
+    Then I run `wp option get my_json_option`
+    And STDOUT should contain:
+      "http:\/\/foo.local\/wp-content\/uploads\/image.jpg"
+    Then I run `wp search-replace //foo.local //bar.local --recurse-json`
+    Then I run `wp option get my_json_option`
+    And STDOUT should contain:
+      "http:\/\/bar.local\/wp-content\/uploads\/image.jpg"

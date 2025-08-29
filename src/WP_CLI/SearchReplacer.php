@@ -56,6 +56,10 @@ class SearchReplacer {
 	 * @var int
 	 */
 	private $max_recursion;
+
+	/**
+	 * @var bool
+	 */
 	private $recurse_json;
 
 	/**
@@ -77,7 +81,7 @@ class SearchReplacer {
 		$this->regex_delimiter = $regex_delimiter;
 		$this->regex_limit     = $regex_limit;
 		$this->logging         = $logging;
-		$this->recurse_json    = $recurse_json
+		$this->recurse_json    = $recurse_json;
 		$this->clear_log_data();
 
 		// Get the XDebug nesting level. Will be zero (no limit) if no value is set
@@ -189,17 +193,17 @@ class SearchReplacer {
 					$old_data = $data;
 				}
 
-				// TODO: This runs json_decode twice and is bad and I should feel bad.
-				if ( $this->is_json($data) && $this->recurse_json ) {
-					$decoded_data = json_decode( $new_value );
-					if ( $decoded_data === null ) {
-					    WP_CLI::warning( "Skipping JSON processing for value that failed decoding: " . substr($value, 0, 100) );
-					} else {
-						$decoded_data = $this->recurse_json_replace( $decoded_data );
+				if ( $this->recurse_json ) {
+					$decoded_data = json_decode( $data );
+					if ( json_last_error() === JSON_ERROR_NONE && $decoded_data !== null ) {
+						$decoded_data = $this->recurse_json_replace( $decoded_data, $this->from, $this->to );
 						$data = json_encode( $decoded_data );
+					} else {
+						WP_CLI::warning( "Skipping JSON processing for value that failed decoding: " . substr($data, 0, 100) );
+						$data = $this->run_string_search_and_replace($data);
 					}
 				} else {
-					$data = $this->run_string_search_and_replace($data)
+					$data = $this->run_string_search_and_replace($data);
 				}
 
 				if ( $this->logging && $old_data !== $data ) {
@@ -300,17 +304,5 @@ class SearchReplacer {
 			return $result;
 		}
 		return str_replace( $this->from, $this->to, $data );
-	}
-
-	/**
-	 * Assert whether a given value is valid JSON or not.
-	 *
-	 * @param string $data the data to validate
-	 * @return boolean whether or not the data is valid JSON
-	 */
-	private function is_json($data) boolean {
-		// TODO: Check string starts with [ or {
-		json_decode($data);
-		return (json_last_error() === JSON_ERROR_NONE);
 	}
 }
